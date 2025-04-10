@@ -234,6 +234,11 @@ for i, row in schedule.iterrows():
     except Exception as e:
         print(f"❌ Failed to load {event_name}: {e}")
 
+#%%
+import fastf1
+from time import sleep
+
+fastf1.Cache.enable_cache('cache')
 year = 2024
 schedule = fastf1.get_event_schedule(year)
 
@@ -252,6 +257,13 @@ for i, row in schedule.iterrows():
     except Exception as e:
         print(f"❌ Failed to load {event_name}: {e}")
 
+#%%
+import fastf1
+from time import sleep
+
+fastf1.Cache.enable_cache('cache')
+year = 2024
+schedule = fastf1.get_event_schedule(year)
 year = 2025
 schedule = fastf1.get_event_schedule(year)
 
