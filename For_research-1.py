@@ -262,8 +262,6 @@ import fastf1
 from time import sleep
 
 fastf1.Cache.enable_cache('cache')
-year = 2024
-schedule = fastf1.get_event_schedule(year)
 year = 2025
 schedule = fastf1.get_event_schedule(year)
 
