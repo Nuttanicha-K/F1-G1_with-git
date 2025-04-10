@@ -182,3 +182,90 @@ session.load()
 session.laps.columns
 #ตัวอย่าง object results
 session.results.columns
+
+#%%
+import fastf1
+from time import sleep
+
+# ✅ เปิด cache: ต้องใส่ก่อน load ทุกครั้ง
+fastf1.Cache.enable_cache('cache')  # ชื่อโฟลเดอร์จะสร้างอัตโนมัติถ้ายังไม่มี
+
+year = 2021
+schedule = fastf1.get_event_schedule(year)
+
+# 🏁 วนโหลดรอบ Race ('R') ของทุกสนามในปีนั้น
+for i, row in schedule.iterrows():
+    round_number = row['RoundNumber']
+    event_name = row['EventName']
+    
+    try:
+        print(f"\n📦 Loading RACE for {event_name} (Round {round_number})...")
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()  # 💾 โหลดและเซฟเข้า cache
+
+        print("✅ Cached successfully.")
+        sleep(2)  # ป้องกันโหลดถี่เกินจนโดน block
+
+    except Exception as e:
+        print(f"❌ Failed to load {event_name}: {e}")
+
+# %%
+import fastf1
+from time import sleep
+
+
+fastf1.Cache.enable_cache('cache')
+
+year = 2022
+schedule = fastf1.get_event_schedule(year)
+
+for i, row in schedule.iterrows():
+    round_number = row['RoundNumber']
+    event_name = row['EventName']
+    
+    try:
+        print(f"\n📦 Loading RACE for {event_name} (Round {round_number})...")
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()  # 💾 โหลดและเซฟเข้า cache
+
+        print("✅ Cached successfully.")
+        sleep(2)  # ป้องกันโหลดถี่เกินจนโดน block
+
+    except Exception as e:
+        print(f"❌ Failed to load {event_name}: {e}")
+
+year = 2024
+schedule = fastf1.get_event_schedule(year)
+
+for i, row in schedule.iterrows():
+    round_number = row['RoundNumber']
+    event_name = row['EventName']
+    
+    try:
+        print(f"\n📦 Loading RACE for {event_name} (Round {round_number})...")
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()  # 💾 โหลดและเซฟเข้า cache
+
+        print("✅ Cached successfully.")
+        sleep(2)  # ป้องกันโหลดถี่เกินจนโดน block
+
+    except Exception as e:
+        print(f"❌ Failed to load {event_name}: {e}")
+
+year = 2025
+schedule = fastf1.get_event_schedule(year)
+
+for i, row in schedule.iterrows():
+    round_number = row['RoundNumber']
+    event_name = row['EventName']
+    
+    try:
+        print(f"\n📦 Loading RACE for {event_name} (Round {round_number})...")
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()  # 💾 โหลดและเซฟเข้า cache
+
+        print("✅ Cached successfully.")
+        sleep(2)  # ป้องกันโหลดถี่เกินจนโดน block
+
+    except Exception as e:
+        print(f"❌ Failed to load {event_name}: {e}")
