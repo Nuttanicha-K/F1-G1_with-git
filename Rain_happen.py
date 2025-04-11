@@ -195,12 +195,19 @@ finish_cluster = cluster_dnf_counts.idxmin()
 
 #ใส่ชื่อคลัสเตอร์
 df['ClusterLabel'] = df['Cluster'].map({
-    dnf_cluster: 'Likely DNF',
-    finish_cluster: 'Likely Finisher'
+    dnf_cluster: 'Have high risk to not finished', #กลุ่มที่มีปัจจัยที่มีความเสี่ยงสูงว่าจะแข่งไม่จบ แต่ไม่ได้แปลว่าจะแข่งไม่จบ
+    finish_cluster: 'Have low risk to not finished' #กลุ่มที่มีความเสี่ยงต่ำ แต่ไม่ได้แปลว่าจะแข่งจบ
 })
 
 # โชว์ชื่อนักแข่งทั้งหมด บริ๊น ๆๆๆๆๆ
 for label in df['ClusterLabel'].unique():
     print(f"\n🚥 {label} Drivers:")
     drivers = df[df['ClusterLabel'] == label][['Driver', 'Event', 'Year', 'DNF']]
+    print(drivers.sort_values(by=['Year', 'Event']).to_string(index=False))
+
+#%%
+
+for label in df['ClusterLabel'].unique():
+    print(f"\n🚥 {label} Drivers:")
+    drivers = df[df['ClusterLabel'] == label][['Driver', 'Event', 'Year', 'DNF', 'LapCount', 'TotalTime', 'GridPosition', 'RacePosition']]
     print(drivers.sort_values(by=['Year', 'Event']).to_string(index=False))
