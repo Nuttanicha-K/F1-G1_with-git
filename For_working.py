@@ -66,3 +66,36 @@ print(matched_df)
 
 #ปัญหาของตอนนี้คือไม่สามารถmatchเวลาจากความเร็วรถของนักแข่งเทียบกับเวลาของธงได้ 
 # คือมันmatchได้ แต่มันไม่accurateขนาดนั้น น่าจะเขียนโค้ดผิดหรือมันผิด ฉันไม่ผิด
+
+#%%
+#เดี๋ยวจะลองmatchกับสภาพอากาศดู
+session = fastf1.get_session(2023, 'Australian', 'R')
+session.load()
+weather_data = session.weather_data
+print(weather_data)
+
+#%%
+df_track_status = track_status
+
+yellow_flag_safety_appeared = df_track_status[df_track_status['Status'].isin(['2', '4'])] #สเตตัสเป็นstringงับ
+print(yellow_flag_safety_appeared)
+
+def find_closest_time(yellow_time, available_times):
+    time_diff = abs(available_times - yellow_time)
+    closest_idx = time_diff.idxmin()
+    
+    return available_times.loc[closest_idx], weather_data.loc[closest_idx, 'AirTemp']
+
+
+matched = []
+
+for yellow_time in time_wheren_yellow_flag_safety_appeared:
+    closest_time, speed = find_closest_time(yellow_time, weather_data['Time'])
+    matched.append({
+        'Yellow Flag Time': yellow_time,
+        'Closest Time': closest_time,
+        'AirTemp': speed    #ฉันก็งงคือกันทำไมใส่airtempไม่ติด แตใส speeed ละขึ้นข้อมูล air tempให้
+    })
+
+matched_df = pd.DataFrame(matched)
+print(matched_df)
