@@ -106,7 +106,7 @@ import matplotlib.pyplot as plt
 
 #ทำการแบ่งคลัสเตอร์กันฮ๊าฟฟฟฟฟฟฟ
 fastf1.Cache.enable_cache('cache')
-years = range(2021, 2023) #คอมเส้นไหวแค่นี้ ใครเอาไปลองต่อ ทำให้(2021-2026เลย)
+years = range(2021, 2023) #คอมเส้นไหวแค่นี้ ทำต่อหน่อย2021-2026
 today = datetime.today()
 
 driver_data = []
