@@ -6,7 +6,6 @@ import pandas as pd
 import fastf1.plotting
 import numpy as np
 import sklearn
-from sklearn.datasets import make_blobs
 from sklearn.cluster import KMeans
 #%%
 #ขอลองเอาดาต้า1แมตช์มาทดลองทำเป็นโมเดลเล็ก ๆ ก่อนนะแม่
