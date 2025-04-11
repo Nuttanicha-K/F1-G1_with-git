@@ -84,17 +84,18 @@ def find_closest_time(yellow_time, available_times):
     time_diff = abs(available_times - yellow_time)
     closest_idx = time_diff.idxmin()
     
-    return available_times.loc[closest_idx], weather_data.loc[closest_idx, 'AirTemp']
+    return available_times.loc[closest_idx], weather_data.loc[closest_idx, 'AirTemp'], weather_data.loc[closest_idx, 'Humidity']
 
 
 matched = []
 
 for yellow_time in time_wheren_yellow_flag_safety_appeared:
-    closest_time, AirTemp = find_closest_time(yellow_time, weather_data['Time'])
+    closest_time, Airtemp, Humidity = find_closest_time(yellow_time, weather_data['Time'])
     matched.append({
         'Yellow Flag Time': yellow_time,
         'Closest Time': closest_time,
-        'AirTemp': AirTemp
+        'AirTemp': Airtemp,
+        'Humidity' : Humidity
     })
 
 matched_df = pd.DataFrame(matched)
