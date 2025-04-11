@@ -279,3 +279,118 @@ for i, row in schedule.iterrows():
 
     except Exception as e:
         print(f"❌ Failed to load {event_name}: {e}")
+
+# %%
+#ดูแมตช์ที่มีฝนตกคร่ะะะะ
+import fastf1
+fastf1.Cache.enable_cache('cache')
+years = range(2021, 2026)  
+
+rainy_sessions = []
+
+for year in years:
+    schedule = fastf1.get_event_schedule(year)
+    
+    for _, event in schedule.iterrows():
+        for session_name in ['R']:
+            try:
+                session = fastf1.get_session(year, event['EventName'], session_name)
+                session.load()
+
+                weather = session.weather_data
+
+                
+                if weather is not None and (weather['Rainfall'] > 0).any():
+                    rainy_sessions.append({
+                        'Year': year,
+                        'Event': event['EventName'],
+                        'Session': session_name
+                    })
+            except Exception as e:
+                # ข้ามปีข้ามแมตช์ที่ไม่มีข้อมูล
+                print(f"Skipped {year} {event['EventName']} {session_name}: {e}")
+
+
+print("\n🌧️ Rainy Sessions Found:")
+for entry in rainy_sessions:
+    print(f"{entry['Year']} - {entry['Event']} - {entry['Session']}")
+
+#%%
+#ชื่อนักแข่งทั้งหมดจากปีไหนถึงไหน
+import fastf1
+import pandas as pd
+fastf1.Cache.enable_cache('cache')
+
+years = range(2021, 2026)
+
+all_drivers = set()
+
+for year in years:
+    schedule = fastf1.get_event_schedule(year)
+    
+    for _, event in schedule.iterrows():
+        try:
+            session = fastf1.get_session(year, event['EventName'], 'R')
+            session.load()
+
+            results = session.results
+            if results is not None:
+                for _, row in results.iterrows():
+                    full_name = row.get('FullName')
+                    if full_name:
+                        all_drivers.add(full_name)
+        except Exception as e:
+            print(f"Skipped {year} {event['EventName']}: {e}")
+
+
+sorted_drivers = sorted(all_drivers)
+print("\n👨‍🏁 Drivers from 2021 to 2025:")
+for name in sorted_drivers:
+    print(name)
+
+# %%
+#ชื่อนักแข่งจากแมตช์ที่ฝนตก
+import fastf1
+import pandas as pd
+
+fastf1.Cache.enable_cache('cache')
+
+years = range(2021, 2026)
+
+rainy_drivers = set()
+rainy_events = []
+
+for year in years:
+    schedule = fastf1.get_event_schedule(year)
+
+    for _, event in schedule.iterrows():
+        try:
+            #พิจารณาแค่raceพอ
+            session = fastf1.get_session(year, event['EventName'], 'R')
+            session.load()
+
+            #เช็กสภาพอากาศครัฟ
+            weather = session.weather_data
+            if weather is not None and (weather['Rainfall'] > 0).any():
+                rainy_events.append((year, event['EventName']))
+
+                # เอาชื่อนักแข่งฮ๊่ฟ
+                results = session.results
+                if results is not None:
+                    for _, row in results.iterrows():
+                        full_name = row.get('FullName')
+                        if full_name:
+                            rainy_drivers.add(full_name)
+
+        except Exception as e:
+            print(f"Skipped {year} {event['EventName']} (R): {e}")
+
+
+print("\n🌧️ Rainy Races from 2021–2025:")
+for yr, ev in rainy_events:
+    print(f"{yr} - {ev}")
+
+print("\n👨‍🏁 Drivers who raced in rainy races:")
+for name in sorted(rainy_drivers):
+    print(name)
+# %%
