@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import fastf1.plotting
 import numpy as np
+import sklearn
+from sklearn.datasets import make_blobs
+from sklearn.cluster import KMeans
 #%%
 #ขอลองเอาดาต้า1แมตช์มาทดลองทำเป็นโมเดลเล็ก ๆ ก่อนนะแม่
 session = fastf1.get_session(2023, 'Australian', 'R')
