@@ -90,11 +90,11 @@ def find_closest_time(yellow_time, available_times):
 matched = []
 
 for yellow_time in time_wheren_yellow_flag_safety_appeared:
-    closest_time, speed = find_closest_time(yellow_time, weather_data['Time'])
+    closest_time, AirTemp = find_closest_time(yellow_time, weather_data['Time'])
     matched.append({
         'Yellow Flag Time': yellow_time,
         'Closest Time': closest_time,
-        'AirTemp': speed    #ฉันก็งงคือกันทำไมใส่airtempไม่ติด แตใส speeed ละขึ้นข้อมูล air tempให้
+        'AirTemp': AirTemp
     })
 
 matched_df = pd.DataFrame(matched)
