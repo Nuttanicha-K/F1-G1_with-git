@@ -461,13 +461,16 @@ pca = PCA(n_components=2)
 components = pca.fit_transform(X)
 
 plt.figure(figsize=(10, 6))
+
 for cluster in df['Cluster'].unique():
     idx = df['Cluster'] == cluster
     label = df[df['Cluster'] == cluster]['ClusterLabel'].iloc[0]
     plt.scatter(components[idx, 0], components[idx, 1], label=label)
 
+""" plotละดำเกิร
 for i, row in df.iterrows():
     plt.text(components[i, 0], components[i, 1], f"{row['Year']} - {row['Driver']}", fontsize=6)
+"""
 
 plt.title(f'F1 Driver Clustering (2021–2024) - points : {len(df)}')
 plt.xlabel('PCA 1')
@@ -485,5 +488,3 @@ for cluster_id in sorted(df['Cluster'].unique()):
         ['Year', 'Driver', 'AvgMaxSpeed', 'AvgAvgSpeed', 'AvgGridPos', 'AvgFinishPos']
     ].sort_values(by=['Year', 'Driver'])
     print(cluster_df.to_string(index=False))
-
-# %%
