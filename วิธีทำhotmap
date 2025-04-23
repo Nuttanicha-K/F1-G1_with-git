@@ -106,3 +106,26 @@ plt.title('Cluster vs Features Heatmap (PosDiffSTD and AvgSpeed)', fontsize=14)
 plt.tight_layout()
 
 plt.show()
+
+#%%
+#เทียบคลัสเตอร์ที่ต้องการกับฟีเจอร์เดียวที่ยังไม่ใช้ต้องการ
+import matplotlib.pyplot as plt
+import numpy as np
+
+cluster_2_data = df_clean[df_clean['Cluster'] == 2]
+mean_values_cluster_2 = cluster_2_data[['PosDiffSTD']].mean()
+
+plt.figure(figsize=(8, 6))
+plt.imshow(mean_values_cluster_2.values.reshape(1, -1), cmap='coolwarm', aspect='auto')
+
+plt.colorbar(label='Mean Value')
+
+plt.xticks(np.arange(len(mean_values_cluster_2)), mean_values_cluster_2.index)
+plt.yticks([0], ['Cluster 2'])
+
+plt.xlabel('Feature')
+plt.ylabel('Cluster')
+plt.title('Cluster 2 vs Features Heatmap PosDiffSTD', fontsize=14)
+plt.tight_layout()
+
+plt.show()
