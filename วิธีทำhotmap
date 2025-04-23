@@ -1,0 +1,84 @@
+import seaborn as sns
+from scipy.stats import spearmanr
+import pandas as pd
+features = ['ฟีเจอร์ที่จะใช้ ถ้าจะเอาทุกฟีเจอร์ในคลัสเตอร​์นั้นก็ใส่ทุกฟีเจอร์']
+
+cluster_1 = df_clean[df_clean['Cluster'] == 1][features]
+cluster_3 = df_clean[df_clean['Cluster'] == 3][features]
+
+corr_1, _ = spearmanr(cluster_1)
+corr_3, _ = spearmanr(cluster_3)
+
+corr_1_df = pd.DataFrame(corr_1, index=features, columns=features)
+corr_3_df = pd.DataFrame(corr_3, index=features, columns=features)
+
+print("\n Spearman Correlation (Cluster 1):")
+print(corr_1_df.round(2))
+
+print("\n Spearman Correlation (Cluster 3):")
+print(corr_3_df.round(2))
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+sns.heatmap(corr_1, annot=True, cmap='coolwarm', center=0,
+            fmt=".2f", square=True, ax=axes[0])
+axes[0].set_title("Cluster 1 - Spearman Correlation")
+
+sns.heatmap(corr_3, annot=True, cmap='coolwarm', center=0,
+            fmt=".2f", square=True, ax=axes[1])
+axes[1].set_title("Cluster 3 - Spearman Correlation")
+
+plt.tight_layout()
+plt.show()
+
+
+#%%
+#ถ้าinstall seaborn ไม่ได้
+#เอาไว้เช็กแน้วโน้มของแต่ละคลัสเตอร์​ว่าใกล้กันไหม
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_heatmap(matrix, labels, title, ax):
+    im = ax.imshow(matrix, cmap='coolwarm', vmin=-1, vmax=1)
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_yticklabels(labels)
+    ax.set_title(title)
+
+    # Annotate
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            value = matrix[i, j]
+            ax.text(j, i, f"{value:.2f}", ha='center', va='center', color='black')
+
+    return im
+
+labels = corr_1_df.columns.tolist()
+corr_1_matrix = corr_1_df.to_numpy()
+corr_2_matrix = corr_3_df.to_numpy()
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+im1 = plot_heatmap(corr_1_matrix, labels, "Cluster 1 - Spearman Correlation", axes[0])
+im2 = plot_heatmap(corr_2_matrix, labels, "Cluster 3 - Spearman Correlation", axes[1])
+
+fig.colorbar(im1, ax=axes.ravel().tolist(), shrink=0.8)
+plt.tight_layout()
+plt.show()
+
+
+cluster_1_data = df_clean[df_clean['Cluster'] == 1]
+cluster_3_data = df_clean[df_clean['Cluster'] == 3]
+
+plt.figure(figsize=(10, 6))
+
+plt.scatter(cluster_1_data['AvgSpeed'], cluster_1_data['AvgRPM'], color='blue', label='Cluster 1', alpha=0.6)
+
+plt.scatter(cluster_3_data['AvgSpeed'], cluster_3_data['AvgRPM'], color='red', label='Cluster 2', alpha=0.6)
+plt.xlabel('Avg Speed')
+plt.ylabel('Avg RPM')
+plt.title('Scatter Plot: Cluster 1 vs Cluster 2')
+plt.legend()
+plt.tight_layout()
+plt.show()
