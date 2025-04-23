@@ -488,3 +488,586 @@ for cluster_id in sorted(df['Cluster'].unique()):
         ['Year', 'Driver', 'AvgMaxSpeed', 'AvgAvgSpeed', 'AvgGridPos', 'AvgFinishPos']
     ].sort_values(by=['Year', 'Driver'])
     print(cluster_df.to_string(index=False))
+
+
+"""ver 5 : เวอร์สุดท้ายของแทร่ ของจริว แบบมาก ๆ มากกกกกก 
+พิจารณาปี2021ถึง2024 สนามที่ฝนไม่ตกมีการแข่งขันจนจบ race
+feasure
+SD ของ position ในปีนั้น ๆ 1 จุด / คน / ปี
+ค่าเฉลี่ยการเบรกตอนเข้าโค้ง
+ความเร็วเฉลี่ยตลอดทั้งปี
+RPM เฉลี่ยต่อปี
+จำนวนการใช้DRS
+"""
+import fastf1
+import pandas as pd
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+fastf1.Cache.enable_cache('cache')
+
+yearly_data = {}
+
+for year in range(2021, 2025):
+    schedule = fastf1.get_event_schedule(year)
+    pos_diffs = []
+
+    for _, row in schedule.iterrows():
+        if row['EventFormat'] != 'conventional':
+            continue
+
+        try:
+            session = fastf1.get_session(year, row['RoundNumber'], 'R')
+            session.load()
+        except:
+            continue
+
+        if session.weather_data['Rainfall'].sum() > 0:
+            continue
+
+        for drv in session.drivers:
+            laps = session.laps.pick_driver(drv)
+            if laps.empty or drv not in session.results.index:
+                continue
+
+            result = session.results.loc[drv]
+            if result['Status'] != 'Finished':
+                continue
+
+            drv_data = yearly_data.setdefault((year, drv), {
+                'BrakeCount': 0,
+                'TotalLaps': 0,
+                'SpeedList': [],
+                'RpmList': [],
+                'DrsUsage': 0,
+                'DrsPossible': 0,
+                'PosDiffList': [],
+                'Name': session.get_driver(drv)['FullName']
+            })
+
+            # เพิ่ม position diff (grid - finish)
+            pos_diff = result['GridPosition'] - result['Position']
+            drv_data['PosDiffList'].append(pos_diff)
+            pos_diffs.append(pos_diff)
+
+            for lap in laps.iterlaps():
+                tel = lap[1].get_telemetry()
+                braking = tel[(tel['Brake'] == True) & (tel['Throttle'] == 0)]
+                drv_data['BrakeCount'] += len(braking)
+                drv_data['SpeedList'].extend(tel['Speed'].dropna())
+                drv_data['RpmList'].extend(tel['RPM'].dropna())
+                drv_data['DrsUsage'] += tel['DRS'].fillna(0).gt(0).sum()
+                drv_data['DrsPossible'] += tel['DRS'].notna().sum()
+                drv_data['TotalLaps'] += 1
+
+    # คำนวณค่าเฉลี่ยของ pos_diff ทั้งปี
+    avg_year_pos_diff = np.mean(pos_diffs)
+    for (yr, drv), data in yearly_data.items():
+        if yr == year:
+            data['PosDiffSTD'] = np.std(np.array(data['PosDiffList']) - avg_year_pos_diff)
+
+# --- สร้าง DataFrame ---
+records = []
+for (year, drv), values in yearly_data.items():
+    drs_pct = (values['DrsUsage'] / values['DrsPossible']) * 100 if values['DrsPossible'] > 0 else 0
+    records.append({
+        'Year': year,
+        'Driver': values['Name'],
+        'PosDiffSTD': values['PosDiffSTD'],
+        'BrakePerCorner': values['BrakeCount'] / values['TotalLaps'] if values['TotalLaps'] else 0,
+        'AvgSpeed': np.mean(values['SpeedList']),
+        'AvgRPM': np.mean(values['RpmList']),
+        'DRSUsagePct': drs_pct
+    })
+
+df = pd.DataFrame(records)
+
+# --- Clustering ---
+features = ['PosDiffSTD', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']
+X = df[features]
+kmeans = KMeans(n_clusters=4, random_state=42)
+df['Cluster'] = kmeans.fit_predict(X)
+
+# ตั้งชื่อกลุ่ม
+df['ClusterLabel'] = df['Cluster'].map({
+    0: 'Tactical',
+    1: 'Aggressor',
+    2: 'Strategist',
+    3: 'Speedster'
+})
+
+# --- PCA Visualization ---
+pca = PCA(n_components=2)
+components = pca.fit_transform(X)
+
+plt.figure(figsize=(10, 6))
+for cluster in df['Cluster'].unique():
+    idx = df['Cluster'] == cluster
+    label = df[df['Cluster'] == cluster]['ClusterLabel'].iloc[0]
+    plt.scatter(components[idx, 0], components[idx, 1], label=label)
+
+plt.title('F1 Driver Clustering (Per Year, 2021–2024)')
+plt.xlabel('PCA 1')
+plt.ylabel('PCA 2')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# --- แสดงข้อมูลแต่ละคลัสเตอร์ ---
+for cluster_id in sorted(df['Cluster'].unique()):
+    label = df[df['Cluster'] == cluster_id]['ClusterLabel'].iloc[0]
+    print(f"\n🏁 Cluster {cluster_id} - {label}:\n")
+    print(df[df['Cluster'] == cluster_id].sort_values(by=['Year', 'Driver']).to_string(index=False))
+
+# %%
+"""ver 6 : ver 5 ตัด rpm ทิ้ง"""
+import fastf1
+import pandas as pd
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+fastf1.Cache.enable_cache('cache')
+
+driver_stats = {}
+
+for year in range(2021, 2025):
+    schedule = fastf1.get_event_schedule(year)
+
+    for _, event in schedule.iterrows():
+        if event['EventFormat'] != 'conventional':
+            continue
+
+        try:
+            session = fastf1.get_session(year, event['RoundNumber'], 'R')
+            session.load()
+        except:
+            continue
+
+        if session.weather_data['Rainfall'].sum() > 0:
+            continue
+
+        avg_diff = []
+        all_driver_diffs = {}
+
+        for drv in session.drivers:
+            laps = session.laps.pick_driver(drv)
+            if laps.empty or drv not in session.results.index:
+                continue
+
+            result = session.results.loc[drv]
+            if result['Status'] != 'Finished':
+                continue
+
+            start_pos = result['GridPosition']
+            finish_pos = result['Position']
+            pos_diff = start_pos - finish_pos
+
+            avg_diff.append(pos_diff)
+            all_driver_diffs[drv] = pos_diff
+
+        if not avg_diff:
+            continue
+
+        mean_diff = np.mean(avg_diff)
+
+        for drv, pos_diff in all_driver_diffs.items():
+            laps = session.laps.pick_driver(drv)
+            laps = laps.pick_quicklaps()
+            if laps.empty:
+                continue
+
+            corners = 0
+            brake_events = 0
+            drs_usage = 0
+            drs_total = 0
+            avg_speeds = []
+
+            for _, lap in laps.iterrows():
+                tel = lap.get_telemetry()
+                if tel.empty:
+                    continue
+
+                speed = tel['Speed'].to_numpy()
+                brake = tel['Brake'].to_numpy()
+                drs = tel['DRS'].to_numpy()
+
+                avg_speeds.append(np.mean(speed))
+
+                for i in range(1, len(speed)):
+                    if speed[i] < speed[i-1] and brake[i]:
+                        brake_events += 1
+                        corners += 1
+
+                drs_usage += np.sum(drs == 5)
+                drs_total += len(drs)
+
+            if drv not in driver_stats:
+                driver_stats[drv] = {'Yearly': {}}
+
+            if year not in driver_stats[drv]['Yearly']:
+                driver_stats[drv]['Yearly'][year] = {
+                    'PosDiffs': [],
+                    'BrakeCount': [],
+                    'AvgSpeed': [],
+                    'DRSUsage': []
+                }
+
+            driver_stats[drv]['Yearly'][year]['PosDiffs'].append(pos_diff - mean_diff)
+            driver_stats[drv]['Yearly'][year]['BrakeCount'].append(brake_events)
+            driver_stats[drv]['Yearly'][year]['AvgSpeed'].extend(avg_speeds)
+            if drs_total > 0:
+                driver_stats[drv]['Yearly'][year]['DRSUsage'].append(drs_usage / drs_total * 100)
+
+# สร้าง DataFrame
+records = []
+for drv, data in driver_stats.items():
+    for year, values in data['Yearly'].items():
+        records.append({
+            'Driver': drv,
+            'Year': year,
+            'SD_PosDiff': np.std(values['PosDiffs']),
+            'AvgBrakeCount': np.mean(values['BrakeCount']),
+            'AvgSpeed': np.mean(values['AvgSpeed']),
+            'AvgDRSUsage': np.mean(values['DRSUsage'])
+        })
+
+df = pd.DataFrame(records)
+df.dropna(inplace=True)
+
+# Clustering
+features = ['SD_PosDiff', 'AvgBrakeCount', 'AvgSpeed', 'AvgDRSUsage']
+X = df[features]
+
+kmeans = KMeans(n_clusters=4, random_state=42)
+df['Cluster'] = kmeans.fit_predict(X)
+
+# PCA Visualization
+pca = PCA(n_components=2)
+components = pca.fit_transform(X)
+
+plt.figure(figsize=(10, 6))
+for cluster in df['Cluster'].unique():
+    idx = df['Cluster'] == cluster
+    plt.scatter(components[idx, 0], components[idx, 1], label=f'Cluster {cluster}')
+
+plt.title('F1 Driver Clustering (2021–2024)')
+plt.xlabel('PCA 1')
+plt.ylabel('PCA 2')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#%%
+"""ver 7 : ver 5 มี Elbow Method มีrpm"""
+import fastf1
+import pandas as pd
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+fastf1.Cache.enable_cache('cache')
+
+yearly_data = {}
+
+for year in range(2023, 2025):
+    schedule = fastf1.get_event_schedule(year)
+    pos_diffs = []
+
+    for _, row in schedule.iterrows():
+        if row['EventFormat'] != 'conventional':
+            continue
+
+        try:
+            session = fastf1.get_session(year, row['RoundNumber'], 'R')
+            session.load()
+        except:
+            continue
+
+        if session.weather_data['Rainfall'].sum() > 0:
+            continue
+
+        for drv in session.drivers:
+            laps = session.laps.pick_driver(drv)
+            if laps.empty or drv not in session.results.index:
+                continue
+
+            result = session.results.loc[drv]
+            if result['Status'] != 'Finished':
+                continue
+
+            drv_data = yearly_data.setdefault((year, drv), {
+                'BrakeCount': 0,
+                'TotalLaps': 0,
+                'SpeedList': [],
+                'RpmList': [],
+                'DrsUsage': 0,
+                'DrsPossible': 0,
+                'PosDiffList': [],
+                'Name': session.get_driver(drv)['FullName']
+            })
+
+            # เพิ่ม position diff (grid - finish)
+            pos_diff = result['GridPosition'] - result['Position']
+            drv_data['PosDiffList'].append(pos_diff)
+            pos_diffs.append(pos_diff)
+
+            for lap in laps.iterlaps():
+                tel = lap[1].get_telemetry()
+                braking = tel[(tel['Brake'] == True) & (tel['Throttle'] == 0)]
+                drv_data['BrakeCount'] += len(braking)
+                drv_data['SpeedList'].extend(tel['Speed'].dropna())
+                drv_data['RpmList'].extend(tel['RPM'].dropna())
+                drv_data['DrsUsage'] += tel['DRS'].fillna(0).gt(0).sum()
+                drv_data['DrsPossible'] += tel['DRS'].notna().sum()
+                drv_data['TotalLaps'] += 1
+
+    # คำนวณค่าเฉลี่ยของ pos_diff ทั้งปี
+    avg_year_pos_diff = np.mean(pos_diffs)
+    for (yr, drv), data in yearly_data.items():
+        if yr == year:
+            data['PosDiffSTD'] = np.std(np.array(data['PosDiffList']) - avg_year_pos_diff)
+
+# --- สร้าง DataFrame ---
+records = []
+for (year, drv), values in yearly_data.items():
+    drs_pct = (values['DrsUsage'] / values['DrsPossible']) * 100 if values['DrsPossible'] > 0 else 0
+    records.append({
+        'Year': year,
+        'Driver': values['Name'],
+        'PosDiffSTD': values['PosDiffSTD'],
+        'BrakePerCorner': values['BrakeCount'] / values['TotalLaps'] if values['TotalLaps'] else 0,
+        'AvgSpeed': np.mean(values['SpeedList']),
+        'AvgRPM': np.mean(values['RpmList']),
+        'DRSUsagePct': drs_pct
+    })
+
+df = pd.DataFrame(records)
+
+# --- Clustering ---
+features = ['PosDiffSTD', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']
+X = df[features]
+
+# --- Elbow Method ---
+inertia = []
+K_range = range(1, 10)
+
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42)
+    km.fit(X)
+    inertia.append(km.inertia_)
+
+plt.figure(figsize=(8, 5))
+plt.plot(K_range, inertia, 'o-', color='purple')
+plt.title('Elbow Method For Optimal k')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia')
+plt.xticks(K_range)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+kmeans = KMeans(n_clusters=4, random_state=42)
+df['Cluster'] = kmeans.fit_predict(X)
+
+# ตั้งชื่อกลุ่ม
+df['ClusterLabel'] = df['Cluster'].map({
+    0: 'Tactical',
+    1: 'Aggressor',
+    2: 'Strategist',
+    3: 'Speedster'
+})
+
+# --- PCA Visualization ---
+pca = PCA(n_components=2)
+components = pca.fit_transform(X)
+
+plt.figure(figsize=(10, 6))
+for cluster in df['Cluster'].unique():
+    idx = df['Cluster'] == cluster
+    label = df[df['Cluster'] == cluster]['ClusterLabel'].iloc[0]
+    plt.scatter(components[idx, 0], components[idx, 1], label=label)
+
+plt.title('F1 Driver Clustering (Per Year, 2021–2024)')
+plt.xlabel('PCA 1')
+plt.ylabel('PCA 2')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# --- แสดงข้อมูลแต่ละคลัสเตอร์ ---
+for cluster_id in sorted(df['Cluster'].unique()):
+    label = df[df['Cluster'] == cluster_id]['ClusterLabel'].iloc[0]
+    print(f"\n🏁 Cluster {cluster_id} - {label}:\n")
+    print(df[df['Cluster'] == cluster_id].sort_values(by=['Year', 'Driver']).to_string(index=False))
+
+
+#%%
+"""ver 8 : ver 6 มี Elbow Method"""
+import fastf1
+import pandas as pd
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+fastf1.Cache.enable_cache('cache')
+
+driver_stats = {}
+
+for year in range(2021, 2025):
+    schedule = fastf1.get_event_schedule(year)
+
+    for _, event in schedule.iterrows():
+        if event['EventFormat'] != 'conventional':
+            continue
+
+        try:
+            session = fastf1.get_session(year, event['RoundNumber'], 'R')
+            session.load()
+        except:
+            continue
+
+        if session.weather_data['Rainfall'].sum() > 0:
+            continue
+
+        avg_diff = []
+        all_driver_diffs = {}
+
+        for drv in session.drivers:
+            laps = session.laps.pick_driver(drv)
+            if laps.empty or drv not in session.results.index:
+                continue
+
+            result = session.results.loc[drv]
+            if result['Status'] != 'Finished':
+                continue
+
+            start_pos = result['GridPosition']
+            finish_pos = result['Position']
+            pos_diff = start_pos - finish_pos
+
+            avg_diff.append(pos_diff)
+            all_driver_diffs[drv] = pos_diff
+
+        if not avg_diff:
+            continue
+
+        mean_diff = np.mean(avg_diff)
+
+        for drv, pos_diff in all_driver_diffs.items():
+            laps = session.laps.pick_driver(drv)
+            laps = laps.pick_quicklaps()
+            if laps.empty:
+                continue
+
+            corners = 0
+            brake_events = 0
+            drs_usage = 0
+            drs_total = 0
+            avg_speeds = []
+
+            for _, lap in laps.iterrows():
+                tel = lap.get_telemetry()
+                if tel.empty:
+                    continue
+
+                speed = tel['Speed'].to_numpy()
+                brake = tel['Brake'].to_numpy()
+                drs = tel['DRS'].to_numpy()
+
+                avg_speeds.append(np.mean(speed))
+
+                for i in range(1, len(speed)):
+                    if speed[i] < speed[i-1] and brake[i]:
+                        brake_events += 1
+                        corners += 1
+
+                drs_usage += np.sum(drs == 5)
+                drs_total += len(drs)
+
+            if drv not in driver_stats:
+                driver_stats[drv] = {'Yearly': {}}
+
+            if year not in driver_stats[drv]['Yearly']:
+                driver_stats[drv]['Yearly'][year] = {
+                    'PosDiffs': [],
+                    'BrakeCount': [],
+                    'AvgSpeed': [],
+                    'DRSUsage': []
+                }
+
+            driver_stats[drv]['Yearly'][year]['PosDiffs'].append(pos_diff - mean_diff)
+            driver_stats[drv]['Yearly'][year]['BrakeCount'].append(brake_events)
+            driver_stats[drv]['Yearly'][year]['AvgSpeed'].extend(avg_speeds)
+            if drs_total > 0:
+                driver_stats[drv]['Yearly'][year]['DRSUsage'].append(drs_usage / drs_total * 100)
+
+# สร้าง DataFrame
+records = []
+for drv, data in driver_stats.items():
+    for year, values in data['Yearly'].items():
+        records.append({
+            'Driver': drv,
+            'Year': year,
+            'SD_PosDiff': np.std(values['PosDiffs']),
+            'AvgBrakeCount': np.mean(values['BrakeCount']),
+            'AvgSpeed': np.mean(values['AvgSpeed']),
+            'AvgDRSUsage': np.mean(values['DRSUsage'])
+        })
+
+df = pd.DataFrame(records)
+df.dropna(inplace=True)
+
+# Clustering
+features = ['SD_PosDiff', 'AvgBrakeCount', 'AvgSpeed', 'AvgDRSUsage']
+X = df[features]
+
+#elbow
+# Elbow Method เพื่อเลือกจำนวนคลัสเตอร์ที่เหมาะสม
+inertias = []
+k_range = range(1, 10)
+
+for k in k_range:
+    km = KMeans(n_clusters=k, random_state=42)
+    km.fit(X)
+    inertias.append(km.inertia_)
+
+plt.figure(figsize=(8, 5))
+plt.plot(k_range, inertias, marker='o')
+plt.title('Elbow Method for Optimal k')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia')
+plt.xticks(k_range)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+kmeans = KMeans(n_clusters=4, random_state=42)
+df['Cluster'] = kmeans.fit_predict(X)
+
+# PCA Visualization
+pca = PCA(n_components=2)
+components = pca.fit_transform(X)
+
+plt.figure(figsize=(10, 6))
+for cluster in df['Cluster'].unique():
+    idx = df['Cluster'] == cluster
+    plt.scatter(components[idx, 0], components[idx, 1], label=f'Cluster {cluster}')
+
+plt.title('F1 Driver Clustering (2021–2024)')
+plt.xlabel('PCA 1')
+plt.ylabel('PCA 2')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
