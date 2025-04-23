@@ -82,3 +82,24 @@ plt.title('Scatter Plot: Cluster 1 vs Cluster 2')
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+
+
+#%%
+#เทียบคลัสเตอร์กับฟีเจอร์ที่ยังไม่ได้ใช้
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+cluster_2_data = df_clean[df_clean['Cluster'] == 2]
+
+plt.figure(figsize=(10, 6))
+plt.hist2d(cluster_2_data['ฟีเจอร์นอกที่จะใช้'], cluster_2_data['ฟีเจอร์นอกที่จะใช้'], 
+           bins=30, cmap='viridis', cmin=1)
+
+plt.colorbar(label='Density')
+plt.xlabel('Position Difference STD')
+plt.ylabel('Avg Speed')
+plt.title('Cluster 2: PosDiffSTD vs Avg Speed (Heatmap)')
+plt.tight_layout()
+plt.show()
