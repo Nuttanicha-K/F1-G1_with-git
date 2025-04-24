@@ -1791,3 +1791,143 @@ for cluster_id in sorted(df_clean['Cluster'].unique()):
     label = df_clean[df_clean['Cluster'] == cluster_id]['ClusterLabel'].iloc[0]
     print(f"\n🏁 Cluster {cluster_id} - {label}:\n")
     print(df_clean[df_clean['Cluster'] == cluster_id].sort_values(by=['Year', 'Driver']).to_string(index=False))
+
+
+"""ver 9 : รันได้"""
+import fastf1
+from fastf1 import get_event
+from fastf1.core import Laps
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+fastf1.Cache.enable_cache('cache')  # เปิด cache เพื่อลดเวลาโหลด
+
+""""STEP 1: ดึงข้อมูลปี 2021–2024 เฉพาะ race ที่ไม่มีฝนและแข่งจนจบ"""
+def is_dry_complete_race(event):
+    session = event.get_session('R')
+    session.load()
+    weather = session.weather_data
+    if weather['Rainfall'].sum() == 0:
+        return True
+    return False
+
+def get_dry_race_events(years):
+    dry_races = []
+    for year in years:
+        schedule = fastf1.get_event_schedule(year)
+        for _, row in schedule.iterrows():
+            try:
+                event = get_event(year, row['EventName'])
+                if is_dry_complete_race(event):
+                    dry_races.append((year, row['EventName']))
+            except Exception as e:
+                print(f"Skipping {row['EventName']} in {year} due to error: {e}")
+    return dry_races
+
+"""STEP 2: สร้าง Feature ที่คุณต้องการ"""
+def extract_features_for_event(year, event_name):
+    try:
+        event = get_event(year, event_name)
+        session = event.get_session('R')
+        session.load()
+        laps = session.laps.pick_quicklaps()
+
+        features = []
+        for driver in laps['Driver'].unique():
+            driver_laps = laps.pick_driver(driver)
+
+            if len(driver_laps) < 5:
+                continue
+
+            # Feature 1: avg start-finish difference
+            start_pos = driver_laps['Position'].iloc[0]
+            finish_pos = driver_laps['Position'].iloc[-1]
+            diff = start_pos - finish_pos
+
+            # Feature 2: braking events (approximation)
+            telemetry = driver_laps.get_telemetry()
+            braking_events = telemetry['Brake'].sum()
+
+            # Feature 3-5
+            avg_speed = telemetry['Speed'].mean()
+            avg_rpm = telemetry['RPM'].mean()
+            drs_usage_pct = telemetry['DRS'].sum() / len(telemetry) * 100
+
+            features.append({
+                'Year': year,
+                'Driver': driver,
+                'Event': event_name,
+                'DiffPos': diff,
+                'Brakes': braking_events,
+                'Speed': avg_speed,
+                'RPM': avg_rpm,
+                'DRS_pct': drs_usage_pct
+            })
+        return pd.DataFrame(features)
+    except Exception as e:
+        print(f"Error processing {event_name} in {year}: {e}")
+        return pd.DataFrame()
+
+"""STEP 3: รวมข้อมูลและคำนวณ Z-score สำหรับ Feature 1"""
+def aggregate_features(dry_races):
+    df_list = []
+    for year, event_name in dry_races:
+        df_event = extract_features_for_event(year, event_name)
+        df_list.append(df_event)
+    df = pd.concat(df_list)
+    return df
+
+def compute_zscore_feature1(df):
+    result = []
+    for year in df['Year'].unique():
+        df_year = df[df['Year'] == year]
+        yearly_mean = df_year.groupby('Driver')['DiffPos'].mean().reset_index()
+        global_mean = df_year['DiffPos'].mean()
+        global_std = df_year['DiffPos'].std()
+        yearly_mean['Z_DiffPos'] = (yearly_mean['DiffPos'] - global_mean) / global_std
+        yearly_mean['Year'] = year
+        result.append(yearly_mean[['Year', 'Driver', 'Z_DiffPos']])
+    return pd.concat(result)
+
+
+"""STEP 4: เตรียม clustering และ plot"""
+def prepare_for_clustering(df, z_df):
+    df_mean = df.groupby(['Year', 'Driver']).agg({
+        'Brakes': 'mean',
+        'Speed': 'mean',
+        'RPM': 'mean',
+        'DRS_pct': 'mean'
+    }).reset_index()
+    df_final = pd.merge(df_mean, z_df, on=['Year', 'Driver'])
+    return df_final
+
+def do_clustering(df_final, n_clusters=3):
+    features = df_final[['Z_DiffPos', 'Brakes', 'Speed', 'RPM', 'DRS_pct']]
+    scaler = StandardScaler()
+    scaled = scaler.fit_transform(features)
+
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    df_final['Cluster'] = kmeans.fit_predict(scaled)
+
+    return df_final
+
+#%%
+"""main"""
+years = [2021, 2022, 2023, 2024]
+dry_races = get_dry_race_events(years)
+df = aggregate_features(dry_races)
+z_df = compute_zscore_feature1(df)
+df_final = prepare_for_clustering(df, z_df)
+df_clustered = do_clustering(df_final, n_clusters=3)
+
+# ดูผล
+print(df_clustered)
+
+#%%
+#ทำเป็นไฟล์
+data = df_clustered
+data.to_csv('output8.csv', index=False)  # บันทึกเป็น CSV
