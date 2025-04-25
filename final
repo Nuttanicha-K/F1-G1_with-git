@@ -162,3 +162,212 @@ print(df_clustered)
 data = df_clustered
 data.to_csv('output.csv', index=False)  # บันทึกเป็น CSV
 
+# %%
+"""ver 800 min"""
+import fastf1
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from scipy.stats import spearmanr
+import warnings
+
+# --- Enable cache and suppress warnings ---
+fastf1.Cache.enable_cache('cache')
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# --- Utility functions ---
+def load_clean_session(year, round_number):
+    try:
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()
+
+        # Skip if it's a rainy session
+        if session.weather_data['Rainfall'].sum() > 0:
+            return None
+
+        return session
+    except Exception:
+        return None
+
+def compute_driver_features(session):
+    driver_data = {}
+    for drv in session.drivers:
+        try:
+            laps = session.laps.pick_driver(drv)
+            result = session.results.loc[drv]
+
+            if result['Status'] != 'Finished' or laps.empty:
+                continue
+
+            driver_data[drv] = {
+                'Name': session.get_driver(drv)['FullName'],
+                'PosDiff': result['GridPosition'] - result['Position'],
+                'BrakeCount': 0,
+                'TotalLaps': 0,
+                'SpeedList': [],
+                'RpmList': [],
+                'DrsUsage': 0,
+                'DrsPossible': 0
+            }
+
+            for lap in laps.iterlaps():
+                tel = lap[1].get_telemetry()
+                driver_data[drv]['BrakeCount'] += ((tel['Brake'] == True) & (tel['Throttle'] == 0)).sum()
+                driver_data[drv]['SpeedList'].extend(tel['Speed'].dropna())
+                driver_data[drv]['RpmList'].extend(tel['RPM'].dropna())
+                driver_data[drv]['DrsUsage'] += tel['DRS'].fillna(0).gt(0).sum()
+                driver_data[drv]['DrsPossible'] += tel['DRS'].notna().sum()
+                driver_data[drv]['TotalLaps'] += 1
+
+        except Exception:
+            continue
+    return driver_data
+
+# --- Main processing loop ---
+def collect_yearly_data(start_year=2021, end_year=2024): #ลองปีเดียวก่อน
+    all_drivers = {}
+    all_pos_diffs = []
+
+    for year in range(start_year, end_year + 1):
+        schedule = fastf1.get_event_schedule(year)
+        if schedule.empty or 'RoundNumber' not in schedule.columns:
+            continue
+
+        for _, event in schedule.iterrows():
+            session = load_clean_session(year, event['RoundNumber'])
+            if session is None:
+                continue
+
+            features = compute_driver_features(session)
+
+            for drv, stats in features.items():
+                key = (year, drv)
+                all_pos_diffs.append(stats['PosDiff'])
+                if key not in all_drivers:
+                    all_drivers[key] = stats
+                else:
+                    # Aggregate stats
+                    all_drivers[key]['PosDiff'] += stats['PosDiff']
+                    all_drivers[key]['BrakeCount'] += stats['BrakeCount']
+                    all_drivers[key]['TotalLaps'] += stats['TotalLaps']
+                    all_drivers[key]['SpeedList'].extend(stats['SpeedList'])
+                    all_drivers[key]['RpmList'].extend(stats['RpmList'])
+                    all_drivers[key]['DrsUsage'] += stats['DrsUsage']
+                    all_drivers[key]['DrsPossible'] += stats['DrsPossible']
+
+    return all_drivers, all_pos_diffs
+
+# --- Build dataframe ---
+def build_dataframe(all_drivers, all_pos_diffs):
+    pos_diff_mean = np.mean(all_pos_diffs)
+    pos_diff_std = np.std(all_pos_diffs, ddof=1)
+
+    records = []
+    for (year, drv), v in all_drivers.items():
+        drs_pct = (v['DrsUsage'] / v['DrsPossible']) * 100 if v['DrsPossible'] > 0 else 0
+        brake_per_corner = v['BrakeCount'] / v['TotalLaps'] if v['TotalLaps'] > 0 else 0
+        pos_z = (v['PosDiff'] - pos_diff_mean) / pos_diff_std
+
+        records.append({
+            'Year': year,
+            'Driver': v['Name'],
+            'PosDiffZScore': pos_z,
+            'BrakePerCorner': brake_per_corner,
+            'AvgSpeed': np.mean(v['SpeedList']) if v['SpeedList'] else 0,
+            'AvgRPM': np.mean(v['RpmList']) if v['RpmList'] else 0,
+            'DRSUsagePct': drs_pct
+        })
+
+    df = pd.DataFrame(records)
+    return df.dropna()
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from scipy.stats import spearmanr
+import matplotlib.pyplot as plt
+
+
+# --- Clustering + validation ---
+def run_clustering(df):
+    X = df[['PosDiffZScore', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']]
+    X = StandardScaler().fit_transform(X)
+
+    # Elbow method
+    inertia = []
+    for k in range(1, 8):
+        model = KMeans(n_clusters=k, random_state=42)
+        model.fit(X)
+        inertia.append(model.inertia_)
+
+    plt.plot(range(1, 8), inertia, marker='o')
+    plt.title("Elbow Method for K Selection")
+    plt.xlabel("Number of Clusters")
+    plt.ylabel("Inertia")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Apply KMeans
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    df['Cluster'] = kmeans.fit_predict(X)
+
+    # Validate using Spearman correlation
+    for feature in ['PosDiffZScore', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']:
+        print(f"Spearman correlation ({feature} vs. Cluster):",
+              spearmanr(df[feature], df['Cluster']).correlation)
+
+    return df
+
+
+# --- Main ---
+if __name__ == '__main__':
+    all_drivers, all_pos_diffs = collect_yearly_data()
+    df = build_dataframe(all_drivers, all_pos_diffs)
+    clustered_df = run_clustering(df)
+
+    # Optionally save to file
+    clustered_df.to_csv("clustered_f1_drivers.csv", index=False)
+    print("✅ Processing complete.")
+
+
+#check features
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import gridspec
+
+features = ['PosDiffZScore', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']
+n_features = len(features)
+
+# Create figure with a GridSpec layout
+fig = plt.figure(figsize=(10, 2 * n_features))
+gs = gridspec.GridSpec(n_features, 2, width_ratios=[20, 1])  # 1 narrow column for colorbar
+
+# Keep track of image handles for shared colorbar
+ims = []
+
+for i, feature in enumerate(features):
+    ax = fig.add_subplot(gs[i, 0])
+    pivot_data = clustered_df.groupby('Cluster')[[feature]].mean()
+    im = ax.imshow(pivot_data.T, cmap='coolwarm', aspect='auto')
+    ims.append(im)
+
+    ax.set_xticks(np.arange(len(pivot_data)))
+    ax.set_xticklabels(pivot_data.index, rotation=90)
+    ax.set_yticks(np.arange(len(pivot_data.columns)))
+    ax.set_yticklabels(pivot_data.columns)
+
+    ax.set_xlabel('Cluster')
+    ax.set_ylabel('Feature')
+    ax.set_title(f'{feature}', fontsize=12)
+
+# Add one shared colorbar to the right
+cax = fig.add_subplot(gs[:, 1])
+cbar = fig.colorbar(ims[0], cax=cax)
+cbar.set_label('Mean Value')
+
+plt.tight_layout()
+plt.show()
+
