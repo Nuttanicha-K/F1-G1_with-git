@@ -2,8 +2,9 @@ This repository is a final project for the Computational Physics course at Chula
 
 The goal of our machine learning model is to **"Classify F1 drivers' racing styles."**  
 Even if our model has done, it might have a lots of change and develop in the future.
-Our final model in file called **"Final Model"** 
-Any conditions that appeared in the model can be change freely eg. Dry race, Rainy race, or Features
+Our final model in file called **"Final Model"**.
+Any conditions that appeared in the model can be change freely 
+eg. Dry race, Rainy race, or Features
 And since we're just petite physics students who never touched coding before, **we tried our best** ❤️‍🔥
 
 If you see any mistakes, missteps, or issues, feel free to educate us!  
