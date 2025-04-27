@@ -1,0 +1,213 @@
+#%%
+"""You need to build your cache file first"""
+import fastf1
+from time import sleep
+
+
+fastf1.Cache.enable_cache('cache')
+year = 2023 #This will be all of the data within that year
+schedule = fastf1.get_event_schedule(year)
+
+# วนโหลดรอบ Race ('R') ของทุกสนามในปีนั้น
+for i, row in schedule.iterrows():
+    round_number = row['RoundNumber']
+    event_name = row['EventName']
+    
+    try:
+        print(f"\nLoading RACE for {event_name} (Round {round_number})...")
+        session = fastf1.get_session(year, round_number, 'R')
+        session.load()  # 💾 โหลดและเซฟเข้า cache
+
+        print("✅ Cached successfully.")
+        sleep(2)  # ป้องกันโหลดถี่เกินจนโดน block
+
+    except Exception as e:
+        print(f" Failed to load {event_name}: {e}")
+
+#%%
+import fastf1
+from fastf1 import get_event
+from fastf1.core import Laps
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+fastf1.Cache.enable_cache('cache')
+
+""""STEP 1: Import data from 2021-2024 only race round, dry race and not include dnf racer"""
+def is_dry_complete_race(event):
+    session = event.get_session('R')
+    session.load()
+    weather = session.weather_data
+    if weather['Rainfall'].sum() == 0:
+        return True
+    return False
+
+def get_dry_race_events(years):
+    dry_races = []
+    for year in years:
+        schedule = fastf1.get_event_schedule(year)
+        for _, row in schedule.iterrows():
+            try:
+                event = get_event(year, row['EventName'])
+                if is_dry_complete_race(event):
+                    dry_races.append((year, row['EventName']))
+            except Exception as e:
+                print(f"Skipping {row['EventName']} in {year} due to error: {e}")
+    return dry_races
+
+"""STEP 2: Features"""
+def extract_features_for_event(year, event_name):
+    try:
+        event = get_event(year, event_name)
+        session = event.get_session('R')
+        session.load()
+        laps = session.laps.pick_quicklaps()
+
+        features = []
+        for driver in laps['Driver'].unique():
+            driver_laps = laps.pick_driver(driver)
+
+            if len(driver_laps) < 40:
+                continue
+
+            # Feature 1: avg start-finish difference
+            start_pos = driver_laps['Position'].iloc[0]
+            finish_pos = driver_laps['Position'].iloc[-1]
+            diff = start_pos - finish_pos
+
+            # Feature 2: braking events (approximation)
+            telemetry = driver_laps.get_telemetry()
+            braking_events = telemetry['Brake'].sum()
+
+            # Feature 3-5
+            avg_speed = telemetry['Speed'].mean()
+            avg_rpm = telemetry['RPM'].mean()
+            drs_usage_pct = telemetry['DRS'].sum() / len(telemetry) * 100
+
+            features.append({
+                'Year': year,
+                'Driver': driver,
+                'Event': event_name,
+                'DiffPos': diff,
+                'Brakes': braking_events,
+                'Speed': avg_speed,
+                'RPM': avg_rpm,
+                'DRS_pct': drs_usage_pct
+            })
+        return pd.DataFrame(features)
+    except Exception as e:
+        print(f"Error processing {event_name} in {year}: {e}")
+        return pd.DataFrame()
+
+"""STEP 3: Calculated z-score for our feature no.1"""
+def aggregate_features(dry_races):
+    df_list = []
+    for year, event_name in dry_races:
+        df_event = extract_features_for_event(year, event_name)
+        df_list.append(df_event)
+    df = pd.concat(df_list)
+    return df
+
+def compute_zscore_feature1(df):
+    result = []
+    for year in df['Year'].unique():
+        df_year = df[df['Year'] == year]
+        yearly_mean = df_year.groupby('Driver')['DiffPos'].mean().reset_index()
+        global_mean = df_year['DiffPos'].mean()
+        global_std = df_year['DiffPos'].std()
+        yearly_mean['Z_DiffPos'] = (yearly_mean['DiffPos'] - global_mean) / global_std
+        yearly_mean['Year'] = year
+        result.append(yearly_mean[['Year', 'Driver', 'Z_DiffPos']])
+    return pd.concat(result)
+
+
+"""STEP 4: Prepared clustering and plotting"""
+def prepare_for_clustering(df, z_df):
+    df_mean = df.groupby(['Year', 'Driver']).agg({
+        'Brakes': 'mean',
+        'Speed': 'mean',
+        'RPM': 'mean',
+        'DRS_pct': 'mean'
+    }).reset_index()
+    df_final = pd.merge(df_mean, z_df, on=['Year', 'Driver'])
+    return df_final
+
+def do_clustering(df_final, n_clusters=3):
+    features = df_final[['Z_DiffPos', 'Brakes', 'Speed', 'RPM', 'DRS_pct']]
+    scaler = StandardScaler()
+    scaled = scaler.fit_transform(features)
+
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    df_final['Cluster'] = kmeans.fit_predict(scaled)
+
+    return df_final
+
+"""main clustering process"""
+years = [2021, 2022, 2023, 2024]
+dry_races = get_dry_race_events(years)
+df = aggregate_features(dry_races)
+z_df = compute_zscore_feature1(df)
+df_final = prepare_for_clustering(df, z_df)
+df_clustered = do_clustering(df_final, n_clusters=3)
+
+print(df_clustered)
+data = df_clustered
+data.to_csv('output.csv', index=False)  # บันทึกเป็น CSV
+
+
+#%%
+#analyze corellation between clusters and clusters
+pivot_data = df_clean.groupby('Cluster')[['ยาง']].mean()
+plt.figure(figsize=(8, 6))
+plt.imshow(pivot_data.T, cmap='coolwarm', aspect='auto')
+
+plt.colorbar(label='Mean Value')
+plt.xticks(np.arange(len(pivot_data)), pivot_data.index, rotation=90)
+plt.yticks(np.arange(len(pivot_data.columns)), pivot_data.columns)
+
+plt.xlabel('Cluster')
+plt.ylabel('Feature')
+plt.title('Cluster vs Features Heatmap (PosDiffSTD and AvgSpeed)', fontsize=14)
+plt.tight_layout()
+
+plt.show()
+
+
+#analyze Correlation between features and clusters
+#you can change your features and the clusters you wanted
+#%%
+features = ['PosDiffZScore', 'BrakePerCorner', 'AvgSpeed', 'AvgRPM', 'DRSUsagePct']
+n_features = len(features)
+
+# Create figure with a GridSpec layout
+fig = plt.figure(figsize=(10, 2 * n_features))
+gs = gridspec.GridSpec(n_features, 2, width_ratios=[20, 1])  # 1 narrow column for colorbar
+
+# Keep track of image handles for shared colorbar
+ims = []
+
+for i, feature in enumerate(features):
+    ax = fig.add_subplot(gs[i, 0])
+    pivot_data = clustered_df.groupby('Cluster')[[feature]].mean()
+    im = ax.imshow(pivot_data.T, cmap='coolwarm', aspect='auto')
+    ims.append(im)
+
+    ax.set_xticks(np.arange(len(pivot_data)))
+    ax.set_xticklabels(pivot_data.index, rotation=90)
+    ax.set_yticks(np.arange(len(pivot_data.columns)))
+    ax.set_yticklabels(pivot_data.columns)
+
+    ax.set_xlabel('Cluster')
+    ax.set_ylabel('Feature')
+    ax.set_title(f'{feature}', fontsize=12)
+
+cax = fig.add_subplot(gs[:, 1])
+cbar = fig.colorbar(ims[0], cax=cax)
+cbar.set_label('Mean Value')
+
+plt.tight_layout()
+plt.show()
